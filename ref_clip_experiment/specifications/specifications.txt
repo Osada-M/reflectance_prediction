@@ -1,0 +1,6 @@
+               model    proccessing time        total params    trainable params       frozen params
+            clip_vit 0.03785848617553711               27713                None                None
+         clip_resnet 0.04089212417602539               18497                None                None
+              resnet 0.04258382320404053            23661505                None                None
+                 vit0.052900075912475586            88073537                None                None
+                 vgg 0.04187822341918945            14733185                None                None
