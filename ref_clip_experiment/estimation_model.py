@@ -22,7 +22,8 @@ class Estimation_Model:
     ## default : dropout_rate = 0.01
     def build_model(self, mode='min', dropout_rate=0.1, output_shape=(1, 32),
                 meta_config={'layernorm':False, 'batchnorm':True, 'dropout':True},
-                word_length=10, batch_size=32, backbone=None, backbone_trainable=False):
+                word_length=10, batch_size=32, backbone=None, backbone_trainable=False,
+                verbose=True):
     
         inp = tf.keras.layers.Input(shape=output_shape)
         x = tf.keras.activations.linear(inp)
@@ -71,7 +72,8 @@ class Estimation_Model:
                 backbone_model.trainable = backbone_trainable
                 backbone_model.layers[0].trainable = True
                 
-                print(f'backbone : {backbone}, {["freezed", "trainable"][backbone_trainable]} : {backbone_model.layers[0].trainable}')
+                if verbose:
+                    print(f'backbone : {backbone}, {["freezed", "trainable"][backbone_trainable]} : {backbone_model.layers[0].trainable}')
                 
                 x = backbone_model(x)
             
@@ -79,7 +81,9 @@ class Estimation_Model:
         
         
         feature_size = len(x.shape)
-        print(f'feature size : {feature_size}')
+        
+        if verbose:
+            print(f'feature size : {feature_size}')
         
         if feature_size == 4:
             x = tf.keras.layers.GlobalAveragePooling2D()(x)
