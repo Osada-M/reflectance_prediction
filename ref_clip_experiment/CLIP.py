@@ -7,26 +7,32 @@ from typing import List
 from transformers import CLIPProcessor, CLIPModel
 from torchvision import transforms
 from cliponnx.models import TextualModel, VisualModel
+import matplotlib.pyplot as plt
 
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 import os
 DIR = os.path.dirname(os.path.abspath(__file__))
+SAVE_DIR = f'{DIR}/vision-text-map'
 
 
 class CLIP:
 
-    def __init__(self, prompt_length:int=128, backbone:str='vit'):
+    def __init__(self, prompt_length:int=128, backbone:str='vit', device:str='cuda', use_text:bool=False):
         
         self.backbone = backbone
+        self.device = device
+        self.use_text = use_text
         
         if self.backbone == 'vit':
             
-            # self.model, self.preprocess = clip.load("ViT-B/32", device=DEVICE)
+            # self.vision_model, self.preprocess = clip.load("ViT-B/32", device=DEVICE)
             self.clip = CLIPModel.from_pretrained('openai/clip-vit-base-patch32')
+            self.clip = self.clip.to(self.device)
             self.processor = CLIPProcessor.from_pretrained('openai/clip-vit-base-patch32')
-            self.model = self.clip.vision_model.to(DEVICE)
+            self.vision_model = self.clip.vision_model.to(self.device)
+            self.text_model = self.clip.text_model.to(self.device)
             
             self.image_to_tensor = transforms.Compose([
                 # transforms.Resize((224, 224)),
@@ -45,64 +51,85 @@ class CLIP:
             # self.visual = VisualModel(f"{DIR}/models/clip-vit-base-patch32-visual-float16.onnx", providers=providers)
             # self.textual = TextualModel("models/clip-vit-base-patch32-textual-float16.onnx", providers=providers)
 
-        if prompt_length == -1:
-            self.prompts = ['']
-        else:
-            length = 10
-            random.seed(prompt_length)
-            self.prompts = [''.join([
-                chr(random.randint(ord('A'), ord('z'))) for _ in range(length)
-                ]) for _ in range(prompt_length)]
+        ## default prompt (do not use prediction)
+        # if prompt_length == -1:
+        self.prompts = ['']
+        # else:
+        #     length = 10
+        #     random.seed(prompt_length)
+        #     self.prompts = ['0'*length for _ in range(prompt_length)]
             
         
-    def __call__(self, image, use_text:bool=False):
+    def __call__(self, image, text:str=None, save_name:str='default'):
         
         
         if self.backbone == 'vit':
             
             with torch.no_grad():
                 
-                if use_text:
+                if self.use_text:
                     
-                    inputs = self.processor(text=self.prompts, images=image, return_tensors="pt", padding=True)
+                    if text is None: raise ValueError('text is required')
+                    
+                    # outputs = self.clip(**inputs)
+                    
+                    ## vision
+                    # vision_tensor = self.image_to_tensor(image).unsqueeze(0).to(self.device)
+                    # vision_features = self.vision_model(vision_tensor)['pooler_output']
+                    
+                    ## text
+                    # inputs = self.processor(text=[text], images=image, return_tensors="pt", padding=True)
+                    # inputs = {name: tensor.to(self.device) for name, tensor in inputs.items()}
+                    # proccessed_text = inputs['input_ids']
+                    # text_features = self.text_model(proccessed_text)['pooler_output']
+                    
+                    # with open(f'{SAVE_DIR}/{save_name}_vision.txt', 'w') as f:
+                    #     print(self.vision_model, file=f)
+                    # with open(f'{SAVE_DIR}/{save_name}_text.txt', 'w') as f:
+                    #     print(self.text_model, file=f)
+                    
+                    # for save_idx, (vis, txt) in enumerate(zip(vision_features, text_features)):
+                    #     vis, txt = vis.cpu().numpy(), txt.cpu().numpy()
+                    #     # map = np.outer(vis, txt)
+                    #     map = np.vstack([vis, txt])
+                    #     correlation_map = np.corrcoef(map)
+                    #     print(map.shape)
+                    #     plt.imshow(map, cmap='coolwarm', interpolation='nearest')
+                    #     plt.colorbar()
+                    #     plt.xticks(ticks=np.arange(len(correlation_map)), labels=['vision', 'text'])
+                    #     plt.yticks(ticks=np.arange(len(correlation_map)), labels=['vision', 'text'])
+                    #     plt.title('Correlation Matrix')
+                    #     plt.savefig(f'{SAVE_DIR}/{save_name}_{save_idx:04d}.png')
+                    
+                    # exit()
+                    
+                    image = self.image_to_tensor(image).unsqueeze(0).to(self.device)
+                    inputs = self.processor(text=[text], images=image, return_tensors="pt", padding=True)
+                    inputs = {name: tensor.to(self.device) for name, tensor in inputs.items()}
                     outputs = self.clip(**inputs)
-                    logits_per_image = outputs.logits_per_image
-                    features = logits_per_image.softmax(dim=1)
+                    
+                    text_features = outputs.text_embeds
+                    vision_features = outputs.image_embeds                    
+                    
+                    # features = torch.cat([vision_features, text_features], dim=1)
+                    features = (vision_features + text_features) / 2
+                                        
 
                 else:
-                    # img = self.processor(image).unsqueeze(0).to(DEVICE)
-                    # features = self.model.encode_image(img)
+                    # img = self.processor(image).unsqueeze(0).to(self.device)
+                    # features = self.vision_model.encode_image(img)
                     
-                    tensor = self.image_to_tensor(image).unsqueeze(0).to(DEVICE)
-                    features = self.model(tensor)['last_hidden_state']
+                    vision_tensor = self.image_to_tensor(image).unsqueeze(0).to(self.device)
+                    features = self.vision_model(vision_tensor)['last_hidden_state']
         
         elif self.backbone == 'resnet':
             
             images_input = self.visual.preprocess_images(image)
             features = self.visual.encode(images_input)
         
-            if use_text:
+            if self.use_text:
                 
                 pass
-                
-                # texts_input = self.textual.tokenize(self.prompts)
-                # text_embeddings = self.textual.encode(texts_input)
-                
-                # table = [["image", "similarity", "text"]]
-
-                # for ii, image in enumerate(images):
-                #     image_embedding = image_embeddings[ii]
-
-                #     similarities = []
-                #     for ti, text in enumerate(texts):
-                #         text_embedding = text_embeddings[ti]
-                #         similarity = cosine_similarity(image_embedding, text_embedding)
-                #         similarities.append([similarity, ">" * int(similarity * 30), text])
-
-                #     similarities.sort(reverse=True, key=itemgetter(0))
-                #     print(image)
-                #     print(tabulate(similarities, headers=["similarity", "bar chart", "text"]))
-                #     print()
                 
         return features
     
@@ -113,15 +140,15 @@ class CLIP:
         
         image = np.array(Image.open(image))
         image = Image.fromarray(image.astype(np.uint8))
-        image = self.preprocess(image).unsqueeze(0).to(DEVICE)
+        image = self.preprocess(image).unsqueeze(0).to(self.device)
         
-        text = clip.tokenize(prompt).to(DEVICE)
+        text = clip.tokenize(prompt).to(self.device)
 
         with torch.no_grad():
             # image_features = model.encode_image(image)
             # text_features = model.encode_text(text)
             
-            logits_per_image, logits_per_text = self.model(image, text)
+            logits_per_image, logits_per_text = self.vision_model(image, text)
             probs = logits_per_image.softmax(dim=-1).cpu().numpy()
             
             return probs
