@@ -13,6 +13,7 @@ from PIL import Image
 import osada
 from CLIP import CLIP
 from estimation_model import Estimation_Model as est_model
+from prompts_for_train import prompts
 
 
 ## ==============================================================================================
@@ -27,11 +28,15 @@ tf.get_logger().setLevel("ERROR")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+USE_TEXT = True
+BACKBONE = 'vit'
+
+
 ## ==============================================================================================
 osada.cprint('\n@ CLIP', 'green')
 
 
-clip_instance = CLIP(32, 'resnet')
+clip_instance = CLIP(32, backbone=BACKBONE, device=DEVICE, use_text=USE_TEXT)
 
 # working_test = {
 #     'image' : f'{DIR}/tmp/dog.jpg',
@@ -67,7 +72,8 @@ print(IMG_SIZE)
 # IMG_SIZE = [3, 224, 224]
 image = np.zeros((*IMG_SIZE[1:], IMG_SIZE[0]))
 image = Image.fromarray(image.astype(np.uint8))
-pred = clip_instance([image], use_text=False)
+pred = clip_instance(image, text='this is a test prompt')
+# pred = clip_instance([image], text='this is a test prompt', use_text=USE_TEXT)
 
 if clip_instance.backbone == 'vit':
     pred = pred.cpu().detach().numpy()
@@ -106,6 +112,8 @@ osada.cprint('\n@ dataset', 'green')
 
 train_fold = glob.glob(f'{DIR}/data/train/*')
 test_fold = glob.glob(f'{DIR}/data/test/*')
+train_prompts = prompts.train_detail
+test_prompts = prompts.test_detail
 
 ds_train = []
 ds_test = []
@@ -120,7 +128,9 @@ for fold in train_fold:
     
     ans = float(fold.replace(f'{DIR}/data/train/', ''))
     images = glob.glob(f'{fold}/*.png')
-    ds_train += list(zip(images, [ans] * len(images)))
+    prompt = train_prompts[ans]
+    
+    ds_train += list(zip(images, [prompt]*len(images), [ans]*len(images)))
 
 for image in test_fold:
     
@@ -129,11 +139,14 @@ for image in test_fold:
         osada.cprint(f'@ \'{key}\' is not in data', 'red')
         continue
     ans = data[key]
-    ds_test.append([image, ans])
+    prompt = test_prompts[key]
+    
+    ds_test.append([image, prompt, ans])
+
 
 
 def datagenerator(ds, clip_instance, augment_fn, epochs=1, batch_size=16, shuffle=True, augment=1, break_limit=False, test=False,
-                  model_aug={}, use_clip=True):
+                  use_clip=True):
 
     ds = ds * augment
     
@@ -151,7 +164,7 @@ def datagenerator(ds, clip_instance, augment_fn, epochs=1, batch_size=16, shuffl
     
     if test:
         for _ in range(epochs):
-            for i, (img, ans) in enumerate(ds):
+            for i, (img, prm, ans) in enumerate(ds):
                 if i >= length:break
                 
                 image = np.array(Image.open(img))
@@ -159,7 +172,7 @@ def datagenerator(ds, clip_instance, augment_fn, epochs=1, batch_size=16, shuffl
                 
                 if use_clip:
                     image = Image.fromarray(image.astype(np.uint8))
-                    image = [clip_instance(image, **model_aug).cpu().detach().numpy()]
+                    image = [clip_instance(image, text=prm,).cpu().detach().numpy()]
                 
                 ans = [float(ans)]
                 
@@ -168,7 +181,7 @@ def datagenerator(ds, clip_instance, augment_fn, epochs=1, batch_size=16, shuffl
     else:
         images, answers = [], []
         for _ in range(epochs):
-            for i, (img, ans) in enumerate(ds):
+            for i, (img, prm, ans) in enumerate(ds):
                 if break_limit and i >= length:break
                 if i and not len(answers)%batch_size:
                     yield np.array(images), np.array(answers)
@@ -180,7 +193,7 @@ def datagenerator(ds, clip_instance, augment_fn, epochs=1, batch_size=16, shuffl
                 if use_clip:
                     image = Image.fromarray(image.astype(np.uint8))
                     if clip_instance.backbone == 'vit':
-                        image = clip_instance(image, **model_aug).cpu().detach().numpy()
+                        image = clip_instance(image, text=prm,).cpu().detach().numpy()
                     elif clip_instance.backbone == 'resnet':
                         image = clip_instance.visual.preprocess_images([image])
                         image = clip_instance.visual.encode(image)
@@ -217,8 +230,8 @@ osada.cprint('\n@ set preference', 'green')
 
 configs = [
     
-    # {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : False, 'load_id' : ''},
-    {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'clip_resnet_20240213_2100_11'},
+    {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : False, 'load_id' : ''},
+    # {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'clip_resnet_20240213_2100_11'},
     # {'batch_size' : 32, 'epochs' : 100, 'mode' : 'mid', 'load_weights' : True, 'load_id' : '20230827_0809_17'},
     {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'previous'},
     {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'previous'},
@@ -241,7 +254,7 @@ configs = [
 
 
 previous = None
-buf = 'clip_resnet_'
+buf = 'text_clip_vit_'
 
 # BATCH_SIZE = 32
 # EPOCHS = 100
@@ -252,9 +265,9 @@ META_CONFIG = {
     'batchnorm' : True,
     'dropout'   : True,
     }
-MODEL_AUG = {
-    'use_text' : False
-}
+# MODEL_AUG = {
+#     'use_text' : False
+# }
 
 # LOAD_WEIGHTS = True
 # LOAD_ID = '20230626_0322_10'
@@ -262,6 +275,12 @@ MODEL_AUG = {
 
 AUGMENT = 4
 LR = 1e-4
+
+
+if clip_instance.use_text:
+    osada.cprint('\n# Use text prompt.', 'lightgreen')
+else:
+    osada.cprint('\n# DO NOT use text prompt.', 'red')
 
 
 for elem in configs:
@@ -325,7 +344,7 @@ file=f)
     ])
 
     train_datagen = datagenerator(ds_train, clip_instance, train_aug, epochs=EPOCHS,
-                                batch_size=BATCH_SIZE, augment=AUGMENT, model_aug=MODEL_AUG,
+                                batch_size=BATCH_SIZE, augment=AUGMENT, 
                                 use_clip=True)
     # test_datagen = datagenerator(ds_test, clip_instance, test_aug, epochs=EPOCHS, batch_size=16, test=True)
 

@@ -20,6 +20,7 @@ import osada
 from CLIP import CLIP
 from estimation_model import Estimation_Model as est_model
 import analyze_result
+from prompts_for_train import prompts
 
 
 ## ==============================================================================================
@@ -34,12 +35,15 @@ tf.get_logger().setLevel("ERROR")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+USE_TEXT = True
+BACKBONE = 'vit'
+
 
 ## ==============================================================================================
 osada.cprint('\n@ CLIP', 'green')
 
 
-clip_instance = CLIP(32, 'resnet')
+clip_instance = CLIP(32, backbone=BACKBONE, device=DEVICE, use_text=USE_TEXT, is_save_feature=True)
 
 
 ## ==============================================================================================
@@ -63,7 +67,7 @@ print(IMG_SIZE)
 
 image = np.zeros((*IMG_SIZE[1:], IMG_SIZE[0]))
 image = Image.fromarray(image.astype(np.uint8))
-pred = clip_instance([image], False)
+pred = clip_instance(image, text='this is a test prompt')
 
 if clip_instance.backbone == 'vit':
     pred = pred.cpu().detach().numpy()
@@ -81,6 +85,9 @@ osada.cprint('\n@ dataset', 'green')
 train_fold = glob.glob(f'{DIR}/data/train/*')
 test_fold = glob.glob(f'{DIR}/data/test/*')
 
+train_prompts = prompts.train_detail
+test_prompts = prompts.test_detail
+
 ds_train = []
 ds_test = []
 gt = [0.327, 0.411, 0.499, 0.546, 0.616, 0.662, 0.754, 0.830, 0.944, 0.965, 0.272, 0.490, 0.612, 0.669]
@@ -92,7 +99,9 @@ for fold in train_fold:
     
     ans = float(fold.replace(f'{DIR}/data/train/', ''))
     images = glob.glob(f'{fold}/*.png')
-    ds_train += list(zip(images, [ans] * len(images)))
+    prompt = train_prompts[ans]
+    
+    ds_train += list(zip(images, [prompt]*len(images), [ans]*len(images)))
 
 for image in test_fold:
     
@@ -101,7 +110,9 @@ for image in test_fold:
         osada.cprint(f'@ \'{key}\' is not in data', 'red')
         continue
     ans = data[key]
-    ds_test.append([image, ans, key])
+    prompt = test_prompts[key]
+    
+    ds_test.append([image, prompt, ans, key])
     
 
 # with open(f'{DIR}/data/test.txt', 'w') as f:
@@ -109,20 +120,20 @@ for image in test_fold:
 #         print(f'{img} {ans}', file=f)
 
 
-def datagenerator(ds, clip_instance, augment_fn, model_aug, is_train=False):
+def datagenerator(ds, clip_instance, augment_fn, is_train=False):
     
     length = len(ds)
     print(length)
     
     if is_train:
        
-        for i, (img, ans) in enumerate(ds):
+        for i, (img, prm, ans) in enumerate(ds):
             
             image = skimage_io.imread(img).astype(np.float32)
             image = np.array(augment_fn(image))
             image = Image.fromarray(image.astype(np.uint8))
             if clip_instance.backbone == 'vit':
-                image = [clip_instance(image, **model_aug).cpu().detach().numpy()]
+                image = [clip_instance(image, text=prm, save_name=f'train_{i:03d}').cpu().detach().numpy()]
             elif clip_instance.backbone == 'resnet':
                 image = clip_instance.visual.preprocess_images([image])
                 image = [clip_instance.visual.encode(image)]
@@ -134,13 +145,13 @@ def datagenerator(ds, clip_instance, augment_fn, model_aug, is_train=False):
             
     else:
          
-        for i, (img, ans, key) in enumerate(ds):
+        for i, (img, prm, ans, key) in enumerate(ds):
             
             image = skimage_io.imread(img).astype(np.float32)
             image = np.array(augment_fn(image))
             image = Image.fromarray(image.astype(np.uint8))
             if clip_instance.backbone == 'vit':
-                image = [clip_instance(image, **model_aug).cpu().detach().numpy()]
+                image = [clip_instance(image, text=prm, save_name=f'test_{i:03d}').cpu().detach().numpy()]
             elif clip_instance.backbone == 'resnet':
                 image = clip_instance.visual.preprocess_images([image])
                 image = [clip_instance.visual.encode(image)]
@@ -175,19 +186,16 @@ osada.cprint('\n@ test', 'green')
 
 
 config = [
-    # 'clip_resnet_20240213_0739_49',
-    # 'clip_resnet_20240213_1207_15',
-    # 'clip_resnet_20240213_1634_43',
-    'clip_resnet_20240214_0525_19',
-    'clip_resnet_20240214_1410_55',
-    'clip_resnet_20240214_2255_21',
-    'clip_resnet_20240215_0738_09',
-    
+    'text_clip_vit_20240601_1213_17',
+    # 'text_clip_vit_20240601_1412_22',
 ]
-MODEL_AUG = {
-    'use_text' : False
-}
 
+
+if clip_instance.use_text:
+    osada.cprint('\n# Use text prompt.', 'lightgreen')
+else:
+    osada.cprint('\n# DO NOT use text prompt.', 'red')
+    
 
 for NAME in config:
 
@@ -225,7 +233,7 @@ for NAME in config:
 
         print('>>', ['test', 'train'][is_train])
         
-        datagen = datagenerator(ds, clip_instance, resize_and_rescale, model_aug=MODEL_AUG, is_train=is_train)
+        datagen = datagenerator(ds, clip_instance, resize_and_rescale, is_train=is_train)
         length = len(ds)
 
         result = {
@@ -305,3 +313,14 @@ for NAME in config:
 mae : {mae}
 std : {std}\
 ''', file=f)
+
+        correlation = clip_instance.get_correlation()
+        vals, (mean, std) = correlation
+        
+        with open(f'{DIR}/results/{NAME}/result_correlation.txt', 'w') as f:
+            print(f'''\
+mean : {mean}
+std : {std}
+''', file=f)
+        
+        
