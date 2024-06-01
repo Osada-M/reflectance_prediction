@@ -8,22 +8,37 @@ from transformers import CLIPProcessor, CLIPModel
 from torchvision import transforms
 from cliponnx.models import TextualModel, VisualModel
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 # DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+import datetime
+
+NOW = datetime.datetime.now().strftime('%Y%m%d_%H%M_%S')
+
 import os
 DIR = os.path.dirname(os.path.abspath(__file__))
-SAVE_DIR = f'{DIR}/vision-text-map'
+SAVE_DIR = f'{DIR}/vision-text-map/{NOW}'
+
+
+make_dir = lambda x: os.makedirs(x, exist_ok=True)
 
 
 class CLIP:
 
-    def __init__(self, prompt_length:int=128, backbone:str='vit', device:str='cuda', use_text:bool=False):
+    def __init__(self, prompt_length:int=128, backbone:str='vit', device:str='cuda', use_text:bool=False, is_save_feature:bool=False):
         
         self.backbone = backbone
         self.device = device
         self.use_text = use_text
+        self.is_save_feature = is_save_feature
+        
+        self.savefig_on_random = False
+        
+        if is_save_feature:
+            make_dir(SAVE_DIR)
+            with open(f'{SAVE_DIR}/correlation.txt', 'w'): pass
         
         if self.backbone == 'vit':
             
@@ -71,46 +86,57 @@ class CLIP:
                     
                     if text is None: raise ValueError('text is required')
                     
-                    # outputs = self.clip(**inputs)
-                    
-                    ## vision
-                    # vision_tensor = self.image_to_tensor(image).unsqueeze(0).to(self.device)
-                    # vision_features = self.vision_model(vision_tensor)['pooler_output']
-                    
-                    ## text
-                    # inputs = self.processor(text=[text], images=image, return_tensors="pt", padding=True)
-                    # inputs = {name: tensor.to(self.device) for name, tensor in inputs.items()}
-                    # proccessed_text = inputs['input_ids']
-                    # text_features = self.text_model(proccessed_text)['pooler_output']
-                    
-                    # with open(f'{SAVE_DIR}/{save_name}_vision.txt', 'w') as f:
-                    #     print(self.vision_model, file=f)
-                    # with open(f'{SAVE_DIR}/{save_name}_text.txt', 'w') as f:
-                    #     print(self.text_model, file=f)
-                    
-                    # for save_idx, (vis, txt) in enumerate(zip(vision_features, text_features)):
-                    #     vis, txt = vis.cpu().numpy(), txt.cpu().numpy()
-                    #     # map = np.outer(vis, txt)
-                    #     map = np.vstack([vis, txt])
-                    #     correlation_map = np.corrcoef(map)
-                    #     print(map.shape)
-                    #     plt.imshow(map, cmap='coolwarm', interpolation='nearest')
-                    #     plt.colorbar()
-                    #     plt.xticks(ticks=np.arange(len(correlation_map)), labels=['vision', 'text'])
-                    #     plt.yticks(ticks=np.arange(len(correlation_map)), labels=['vision', 'text'])
-                    #     plt.title('Correlation Matrix')
-                    #     plt.savefig(f'{SAVE_DIR}/{save_name}_{save_idx:04d}.png')
-                    
-                    # exit()
-                    
                     image = self.image_to_tensor(image).unsqueeze(0).to(self.device)
                     inputs = self.processor(text=[text], images=image, return_tensors="pt", padding=True)
                     inputs = {name: tensor.to(self.device) for name, tensor in inputs.items()}
                     outputs = self.clip(**inputs)
                     
                     text_features = outputs.text_embeds
-                    vision_features = outputs.image_embeds                    
+                    vision_features = outputs.image_embeds               
                     
+                    ## =====================================================================
+                    if self.is_save_feature:
+                        
+                        txt = text_features.cpu().detach().numpy()[0]
+                        vis = vision_features.cpu().detach().numpy()[0]
+                        
+                        correlation = np.corrcoef(txt, vis)[0][1]
+                        
+                        with open(f'{SAVE_DIR}/correlation.txt', 'a') as f:
+                            print(correlation, file=f)
+                        
+                        if not self.savefig_on_random or random.random() < 0.05:
+                            self.savefig_on_random = True
+
+                            plt.figure(figsize=(10, 10))
+                            
+                            # map = np.outer(txt, vis)
+                            # plt.imshow(map, cmap='coolwarm')
+                            
+                            plt.scatter(txt, vis, c='r', s=10)
+                            plt.xlim(-0.2, 0.2)
+                            plt.ylim(-0.2, 0.2)
+                            plt.title(f'correlation: {correlation}')
+                                                        
+                            plt.xlabel('text')
+                            plt.ylabel('vision')
+                            # plt.savefig(f'{SAVE_DIR}/outer_{save_name}.png')
+                            plt.savefig(f'{SAVE_DIR}/scatter_{save_name}.png')
+                        
+                        # sns.heatmap(correlation, annot=True, cmap='coolwarm', center=0)
+                        # plt.savefig(f'{SAVE_DIR}/{save_name}_correlation.png')
+                        
+                        
+                        # with open(f'{SAVE_DIR}/{save_name}_text.txt', 'w') as f:
+                        #     print(txt.shape)
+                        #     print(txt, file=f)
+                            
+                        # with open(f'{SAVE_DIR}/{save_name}_vision.txt', 'w') as f:
+                        #     print(vis, file=f)
+                            
+                        # exit()
+                    ## =====================================================================
+
                     # features = torch.cat([vision_features, text_features], dim=1)
                     features = (vision_features + text_features) / 2
                                         
@@ -132,6 +158,18 @@ class CLIP:
                 pass
                 
         return features
+    
+    
+    def get_correlation(self):
+        
+        with open(f'{SAVE_DIR}/correlation.txt', 'r') as f:
+            lines = f.readlines()
+        
+        vals = np.asarray([float(x.rstrip('\n')) for x in lines], dtype=np.float32)
+        
+        mean, std = np.mean(vals), np.std(vals)
+        
+        return vals, (mean, std)
     
     
     def contrast(self, *, image:str=None, prompt:List[str]=None):
