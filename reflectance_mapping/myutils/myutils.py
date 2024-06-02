@@ -18,15 +18,56 @@ class MyUtils:
     @staticmethod
     def plot_loss_progress(train, validation, dir, name='loss_progress', loss='MSE'):
         
+        plt.figure(dpi=300)
         plt.plot(train, label='train loss', color='blue')
         plt.plot(validation, label='validation loss', color='orange')
         
         plt.xlabel('epoch')
         plt.ylabel(f'loss ( {loss} )')
         
+        plt.ylim(-0.1, max(max(train), max(validation)))
+        
         # plt.legend()
         
         plt.savefig(f'{dir}/{name}.png')
+    
+    
+    @staticmethod
+    def read_config(config_path):
+        
+        with open(config_path, 'r') as f:
+            lines = f.readlines()
+        
+        config = dict()
+        for line in map(lambda x: x.rstrip('\n'), lines):
+            key, value = line.split(':')
+            config[key.strip()] = value.strip()
+        
+        return config
+    
+    
+    @staticmethod
+    def decide_params(model_name):
+        
+        params = {
+            'length' : 2048,
+            'loss' : 'MSE',
+            'mode' : 'default',
+        }
+        
+        if model_name == 'PointNet++':
+            params['length'] = 1024
+            params['mode'] = 'pointnet'
+        
+        elif model_name == 'SimpleLinear':
+            params['length'] = 2048
+            params['mode'] = 'color_only'
+            
+        elif model_name == 'SimpleTransformer':
+            params['length'] = 2048
+            params['mode'] = 'transformer'
+        
+        return params
 
 
 class TimeCounter:

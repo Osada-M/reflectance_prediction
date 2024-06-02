@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 
 
 
@@ -62,3 +63,12 @@ class MSE(nn.Module):
         
         return self.loss(input, target)
 
+
+class NLL(nn.Module):
+    def __init__(self):
+        super(NLL, self).__init__()
+
+    def forward(self, pred, target, trans_feat=None):
+        total_loss = F.nll_loss(pred, target)
+
+        return total_loss

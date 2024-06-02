@@ -22,6 +22,7 @@ import torch.nn.functional as F
 
 import os
 import sys
+import osada
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(DIR)
@@ -305,12 +306,31 @@ class RayTracing:
 
 
     ## =====================================================================
-    ## utils
+    ## for training
 
     
-    def forward(self, batch_size, dataset, sensor, sensor_info, ):
+    def set_dataset(self, dataset):
         
-        point_wise_coefs = np.zeros((batch_size, dataset.number_of_points))
+        self.dataset = dataset
+        self.dataset_length = len(self.dataset)
+        self.dataset_index = 0
+        
+        osada.cprint(f'@ set new dataset. length: {self.dataset_length}', 'gray')
+    
+    
+    def forward(self, batch_size, sensor, sensor_info, index=None, device=None):
+        
+        if index is not None:
+            self.dataset_index = index
+        
+        if self.dataset_index >= self.dataset_length:
+            osada.cprint(f'<!> index is out of range. index: {self.dataset_index}, length: {self.dataset_length}', 'red')
+            raise IndexError
+        
+        if device is None: device = torch.device('cuda')
+        
+        point_wise_coefs = np.zeros((batch_size, self.dataset.number_of_points))
+
         
         for b in range(batch_size):
             
@@ -318,16 +338,18 @@ class RayTracing:
             sensor_direction = sensor_info[1][b]
             sensor_upword = sensor_info[2][b]
             
-            index = dataset.object_ids[b]
+            obj_id = self.dataset.object_ids[self.dataset_index]
             
             sensor.rotate_from_direction(sensor_direction, sensor_upword)
             sensor.translate(sensor_coord)
             
-            point_wise_coef, info = self.simulate_point_wise_coefficient(dataset.pcds[index], dataset.scenes[index], sensor)
+            point_wise_coef, info = self.simulate_point_wise_coefficient(self.dataset.pcds[obj_id], self.dataset.scenes[obj_id], sensor)
             # dist, pruned_length = info
 
             point_wise_coefs[b,:] = point_wise_coef
+            
+            self.dataset_index += 1
         
-        point_wise_coefs = torch.tensor(point_wise_coefs, dtype=torch.float32)
+        point_wise_coefs = torch.tensor(point_wise_coefs, dtype=torch.float32).to(device)
         
         return point_wise_coefs
