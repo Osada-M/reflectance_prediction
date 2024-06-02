@@ -21,6 +21,7 @@ import osada
 from CLIP import CLIP
 from estimation_model import Estimation_Model as est_model
 import analyze_result
+from prompts_for_train import prompts
 
 
 ## ==============================================================================================
@@ -56,13 +57,16 @@ mkdir = lambda x: os.makedirs(x, exist_ok=True)
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 MODELS = [
-    ['clip',    'vit',      '20230827_0945_14'],
-    ['clip',    'resnet',   'clip_resnet_20240215_0738_09'],
-    # ['resnet',  '',         'resnet_20230628_2217_17'],
-    ['resnet',  '',         'cnntrain_resnet_transfer_20240228_1527_05'],
-    ['vit',     '',         'vit_20230825_2134_49'],
-    ['vgg',     '',         'cnntrain_vgg_transfer_20240226_1010_09'],
+    ['clip-multi-text-only',  'vit',      'text_only_clip_vit_20240602_1023_31'],
+    ['clip-multi-add',  'vit',      'text_clip_vit_20240601_1213_17'],
+    ['clip-multi-concat',  'vit',      'text_concat_clip_vit_20240602_0530_20'],
+    ['clip',        'vit',      '20230827_0945_14'],
+    ['clip',        'resnet',   'clip_resnet_20240215_0738_09'],
+    ['resnet',      '',         'cnntrain_resnet_transfer_20240228_1527_05'],
+    ['vit',         '',         'vit_20230825_2134_49'],
+    ['vgg',         '',         'cnntrain_vgg_transfer_20240226_1010_09'],
 ]
+    # ['clip-multi-concat',  'vit',      'text_concat_clip_vit_20240602_0328_53'],
 
 OMIT_FOLDERS = []
 
@@ -111,6 +115,11 @@ for line in map(str.strip, lines):
     name, ans = line.split(',')
     answers[name] = float(ans)
 
+train_prompts = prompts.train_detail
+test_prompts = prompts.test_detail
+
+prompts_dict = {**train_prompts, **test_prompts}
+
 
 ## ==============================================================================================
 osada.cprint('\n@ prediction', 'green')
@@ -126,13 +135,30 @@ for model in MODELS:
     
     backbone_key, clip_backbone, weights_id = model
     
+    backbone_key = backbone_key.split('-')
+    if len(backbone_key) == 1:
+        backbone_key = backbone_key[0]
+        model_mode = [None]*2
+    else:
+        backbone_key, *model_mode = backbone_key
+    
+    multi_modal_mode = None
+    clip_instance = None
+    
     ## clip
     if backbone_key == 'clip':
         osada.cprint(f'\n- {backbone_key} ( {clip_backbone} )', 'yellow')
         
         backbone = None
         
-        clip_instance = CLIP(32, clip_backbone)
+        use_text = model_mode[0] == 'multi'
+        multi_modal_mode = '-'.join(map(str, model_mode[1:]))
+        if multi_modal_mode == 'None': multi_modal_mode = None
+        
+        osada.cprint(f'  -> use_text : {use_text}', 'yellow')
+        osada.cprint(f'  -> multi_modal_mode : {multi_modal_mode}', 'yellow')
+        
+        clip_instance = CLIP(32, clip_backbone, use_text=use_text, multi_modal_mode=multi_modal_mode, device=DEVICE)
         
         buf = np.zeros((256, 256, 3))
         buf = Image.fromarray(buf.astype(np.uint8))
@@ -152,9 +178,9 @@ for model in MODELS:
         
         image = Image.fromarray(image.astype(np.uint8))
         try:
-            pred = clip_instance(image, False)
+            pred = clip_instance(image, text=clip_instance.tmp_prompt)
         except TypeError:
-            pred = clip_instance([image], False)
+            pred = clip_instance([image], text=clip_instance.tmp_prompt)
 
         if clip_backbone == 'vit':
             pred = pred.cpu().detach().numpy()
@@ -220,7 +246,9 @@ for model in MODELS:
         name = ['unseen', 'known'][is_seen]
         max_j = len(folders)
         
-        csv = csv_path(is_seen, f'{backbone_key}{f"_{clip_backbone}" if clip_backbone else ""}')
+        csv_key = f'{backbone_key}{f"_{clip_backbone}" if clip_backbone else ""}{f"_multi-modal-{multi_modal_mode}" if multi_modal_mode is not None else ""}'
+        
+        csv = csv_path(is_seen, csv_key)
         
         errors = []        
         
@@ -234,6 +262,13 @@ for model in MODELS:
                 object_name = folder.split('/')[-1]
                 if object_name in OMIT_FOLDERS: continue
                 ans = answers[object_name]
+                
+                if object_name in prompts_dict:
+                    prm = prompts_dict[object_name]
+                elif ans in prompts_dict:
+                    prm = prompts_dict[ans]
+                else:
+                    raise ValueError(f'No prompt found for \'{object_name}\' or {ans}')
                 
                 
                 imgs = glob.glob(f'{folder}/*.png') + glob.glob(f'{folder}/*.PNG')
@@ -258,7 +293,7 @@ for model in MODELS:
                             
                         img = Image.fromarray(img.astype(np.uint8))
                         if clip_instance.backbone == 'vit':
-                            img = [clip_instance(img, use_text=False).cpu().detach().numpy()]
+                            img = [clip_instance(img, prm).cpu().detach().numpy()]
                         elif clip_instance.backbone == 'resnet':
                             img = clip_instance.visual.preprocess_images([img])
                             img = [clip_instance.visual.encode(img)]
@@ -275,18 +310,18 @@ for model in MODELS:
                     pred = model.predict(img, verbose=0)[0][0]
                     
                     ## =====================================================================
-
+                    
                     ## =====================================================================
                     
                     errors.append(abs(pred - ans))
                     predicts_buf[k] = pred
                     
-                    osada.cprint(f'\033[1A  -> {name} : {j+1} / {max_j} : {k+1} / {max_k}{" "*20}', 'yellow')
+                    osada.cprint(f'\033[1A  -> {name} : {j+1} / {max_j} : {k+1} / {max_k} | {prm}{" "*40}', 'yellow')
                 
                 print(f'{object_name}, {", ".join(map(str, predicts_buf))}', file=f)
                 del predicts_buf
                 
-                osada.cprint(f'\033[1A  -> {name} : {j+1} / {max_j} : completed!{" "*20}', 'yellow')
+                osada.cprint(f'\033[1A  -> {name} : {j+1} / {max_j} : completed!{" "*60}', 'yellow')
     
 
         errors = np.array(errors)
@@ -295,7 +330,9 @@ for model in MODELS:
     
     with open(general_csv, 'a') as f_g:
         
-        print(f'{backbone_key}{f"_{clip_backbone}" if clip_backbone else ""}, {general_data[0][0]}, {general_data[0][1]}, {general_data[1][0]}, {general_data[1][1]}', file=f_g)
+        print(f'{csv_key}, {general_data[0][0]}, {general_data[0][1]}, {general_data[1][0]}, {general_data[1][1]}', file=f_g)
+    
+    del clip_instance
 
 exit()
 
