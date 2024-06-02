@@ -38,12 +38,17 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 USE_TEXT = True
 BACKBONE = 'vit'
 
+# MULTI_MODAL_MODE = 'add'
+# MULTI_MODAL_MODE = 'concat'
+MULTI_MODAL_MODE = 'text-only'
+
 
 ## ==============================================================================================
 osada.cprint('\n@ CLIP', 'green')
 
 
-clip_instance = CLIP(32, backbone=BACKBONE, device=DEVICE, use_text=USE_TEXT, is_save_feature=True)
+clip_instance = CLIP(32, backbone=BACKBONE, device=DEVICE, is_save_feature=False,
+                     use_text=USE_TEXT, multi_modal_mode=MULTI_MODAL_MODE)
 
 
 ## ==============================================================================================
@@ -186,8 +191,14 @@ osada.cprint('\n@ test', 'green')
 
 
 config = [
-    'text_clip_vit_20240601_1213_17',
+    # 'text_clip_vit_20240601_1213_17',
     # 'text_clip_vit_20240601_1412_22',
+    # 'text_clip_vit_20240601_1613_00',
+    # 'text_clip_vit_20240601_1811_23',
+    # 'text_concat_clip_vit_20240602_0328_53',
+    # 'text_concat_clip_vit_20240602_0530_20',
+    'text_only_clip_vit_20240602_0825_52',
+    'text_only_clip_vit_20240602_1023_31',
 ]
 
 
@@ -314,13 +325,13 @@ mae : {mae}
 std : {std}\
 ''', file=f)
 
-        correlation = clip_instance.get_correlation()
-        vals, (mean, std) = correlation
+#         correlation = clip_instance.get_correlation()
+#         vals, (mean, std) = correlation
         
-        with open(f'{DIR}/results/{NAME}/result_correlation.txt', 'w') as f:
-            print(f'''\
-mean : {mean}
-std : {std}
-''', file=f)
+#         with open(f'{DIR}/results/{NAME}/result_correlation.txt', 'w') as f:
+#             print(f'''\
+# mean : {mean}
+# std : {std}
+# ''', file=f)
         
         

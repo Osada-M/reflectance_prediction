@@ -31,12 +31,16 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 USE_TEXT = True
 BACKBONE = 'vit'
 
+# MULTI_MODAL_MODE = 'add'
+# MULTI_MODAL_MODE = 'concat'
+MULTI_MODAL_MODE = 'text-only'
 
 ## ==============================================================================================
 osada.cprint('\n@ CLIP', 'green')
 
 
-clip_instance = CLIP(32, backbone=BACKBONE, device=DEVICE, use_text=USE_TEXT)
+clip_instance = CLIP(32, backbone=BACKBONE, device=DEVICE, is_save_feature=False,
+                     use_text=USE_TEXT, multi_modal_mode=MULTI_MODAL_MODE)
 
 # working_test = {
 #     'image' : f'{DIR}/tmp/dog.jpg',
@@ -235,7 +239,7 @@ configs = [
     # {'batch_size' : 32, 'epochs' : 100, 'mode' : 'mid', 'load_weights' : True, 'load_id' : '20230827_0809_17'},
     {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'previous'},
     {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'previous'},
-    {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'previous'},
+    # {'batch_size' : 32, 'epochs' : 200, 'mode' : 'mid', 'load_weights' : True, 'load_id' : 'previous'},
     
     # {'batch_size' : 32, 'epochs' : 100, 'mode' : 'min', 'load_weights' : False, 'load_id' : ''},
     # {'batch_size' : 32, 'epochs' : 100, 'mode' : 'min', 'load_weights' : True, 'load_id' : 'previous'},
@@ -254,7 +258,8 @@ configs = [
 
 
 previous = None
-buf = 'text_clip_vit_'
+# buf = 'text_concat_clip_vit_'
+buf = 'text_only_clip_vit_'
 
 # BATCH_SIZE = 32
 # EPOCHS = 100

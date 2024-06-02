@@ -27,12 +27,14 @@ make_dir = lambda x: os.makedirs(x, exist_ok=True)
 
 class CLIP:
 
-    def __init__(self, prompt_length:int=128, backbone:str='vit', device:str='cuda', use_text:bool=False, is_save_feature:bool=False):
+    def __init__(self, prompt_length:int=128, backbone:str='vit', device:str='cuda',
+                 use_text:bool=False, multi_modal_mode:str='add', is_save_feature:bool=False):
         
         self.backbone = backbone
         self.device = device
         self.use_text = use_text
         self.is_save_feature = is_save_feature
+        self.multi_modal_mode = multi_modal_mode
         
         self.savefig_on_random = False
         
@@ -68,7 +70,8 @@ class CLIP:
 
         ## default prompt (do not use prediction)
         # if prompt_length == -1:
-        self.prompts = ['']
+        self.prompts = ['this is a test prompt.']
+        self.tmp_prompt = 'this is a test prompt.'
         # else:
         #     length = 10
         #     random.seed(prompt_length)
@@ -123,22 +126,19 @@ class CLIP:
                             # plt.savefig(f'{SAVE_DIR}/outer_{save_name}.png')
                             plt.savefig(f'{SAVE_DIR}/scatter_{save_name}.png')
                         
-                        # sns.heatmap(correlation, annot=True, cmap='coolwarm', center=0)
-                        # plt.savefig(f'{SAVE_DIR}/{save_name}_correlation.png')
-                        
-                        
-                        # with open(f'{SAVE_DIR}/{save_name}_text.txt', 'w') as f:
-                        #     print(txt.shape)
-                        #     print(txt, file=f)
-                            
-                        # with open(f'{SAVE_DIR}/{save_name}_vision.txt', 'w') as f:
-                        #     print(vis, file=f)
-                            
-                        # exit()
+
                     ## =====================================================================
 
-                    # features = torch.cat([vision_features, text_features], dim=1)
-                    features = (vision_features + text_features) / 2
+                    if self.multi_modal_mode == 'add':
+                        features = (vision_features + text_features) / 2
+                    elif self.multi_modal_mode == 'concat':
+                        features = torch.cat([vision_features, text_features], dim=1)
+                    elif self.multi_modal_mode == 'text-only':
+                        features = text_features
+                    elif self.multi_modal_mode == 'vision-only':
+                        features = vision_features
+                    else:
+                        raise ValueError('multi_modal_mode is not supported')
                                         
 
                 else:
